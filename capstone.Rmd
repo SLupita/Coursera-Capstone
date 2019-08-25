@@ -1,0 +1,211 @@
+---
+title: "Capstone project Milestone Report"
+author: "Lupita Sahu"
+date: "8 July 2019"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include=FALSE,message=FALSE,cache=TRUE, echo = FALSE, eval=TRUE)
+```
+
+```{r}
+library(data.table)
+library(tm)
+library(tidytext)
+library(tidyverse)
+library(ngram)
+```
+
+## Introduction
+
+In this project we are going to create a predictive text model which will take input phrase from the user and predict the next word. 
+
+For example, when someone types:
+
+"I went to the"
+
+the keyboard presents three options for what the next word might be. For example, the three words might be gym, store, restaurant. In this project we will work on understanding and building predictive text models like those used by SwiftKey. The application will be hosted on a Shiny server.
+
+
+## The data
+
+The data used for this project can be found in the following location:
+https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip
+
+The data are taken from three different sources: Blogs, News and Twitter.
+Let's look at the amount of data present in the corpus.
+
+
+```{r}
+corpus <- readRDS("corpus.rds")
+
+blogs_sen <- length(corpus[[1]])
+news_sen <- length(corpus[[2]])
+twitter_sen <- length(corpus[[3]])
+
+blogs_wc <- wordcount(corpus[[1]])
+news_wc <- wordcount(corpus[[2]])
+twitter_wc <- wordcount(corpus[[3]])
+```
+
+
+The total number of sentences and words in blogs, news and twitter files are shown in the table below:
+
+Source  |   Line Count  | Word Count
+--------|---------------|---------------
+Blog    | `r blogs_sen` |`r blogs_wc`
+News    | `r news_sen`  |`r news_wc`
+Twitter |`r twitter_sen`|`r twitter_wc`
+
+
+### Cleaning of data
+
+The raw data obtained above may contain some words which are not useful for our analysis such as: numerics, special characters and profane words. 
+So we will removed them. 
+
+After removing these words, the final data looks like this:
+
+```{r}
+corpus <- readRDS("corpus_clean.rds")
+
+blogs_sen2 <- length(corpus[[1]])
+news_sen2 <- length(corpus[[2]])
+twitter_sen2 <- length(corpus[[3]])
+
+blogs_wc2 <- wordcount(corpus[[1]])
+news_wc2 <- wordcount(corpus[[2]])
+twitter_wc2 <- wordcount(corpus[[3]])
+```
+
+Source  |   Line Count   | Word Count
+--------|----------------|------------
+Blog    | `r blogs_sen2` |`r blogs_wc2`
+News    | `r news_sen2`  |`r news_wc2`
+Twitter |`r twitter_sen2`|`r twitter_wc2`
+
+## Exploratory data analysis
+
+### Analyzing single words
+
+Now that we know how much data is present in them, we can explore more to find out the most frequently occurring words.
+
+For this we will remove single letters (such as "a", "I") and stop words (such as "the", "as", "are" etc), as they will show up in huge numbers and will bias our analysis.
+
+After performing the cleaning, here are the top 10 most common words across various sources.
+
+```{r}
+#top 10 most common words in each source
+unigram <- readRDS("unigram.rds")
+titles <- c("blogs","news","twitter")
+```
+
+```{r, include=TRUE}
+unigram %>%
+        group_by(source) %>%
+        count(word, sort = TRUE) %>%
+        top_n(10) %>%
+        ungroup() %>%
+        mutate(source = factor(source, levels = titles),
+               text_order = nrow(.):1) %>%
+        ggplot(aes(reorder(word, text_order), n, fill = source)) +
+          geom_col(show.legend = FALSE) +
+          facet_wrap(~ source, scales = "free_y") +
+          labs(title="Word frequencies",x="word",y = "Frequency") +
+          coord_flip() +
+          theme(legend.position="none")
+```
+
+We can see there are few words such as "time", "people", "love" which are highly used across all sources.
+Now let's look at the overall most commonly used words across the entire corpus.
+
+```{r}
+## To find out the most common words across the dataset
+unigram_count <- readRDS("unigram_count.rds")
+unigram_freq <- unigram_count %>%
+    mutate(freq = n/nrow(unigram)) %>%
+        mutate(index = row.names(unigram_count), cumfreq = cumsum(freq))
+```
+```{r, include=TRUE}
+unigram_count %>%
+        top_n(15) %>%
+        mutate(word=reorder(word,n)) %>%
+        ggplot(aes(word,n)) +
+        geom_col() +
+        labs(title="Word frequencies",x="word",y="frequency")+
+        coord_flip()
+```
+
+As we can see some words are more frequent that others, we can observe which words contribute more to the corpus by looking at the following plot.
+
+```{r, include=TRUE}
+plot(unigram_freq$index,unigram_freq$cumfreq,xlab = "index", ylab = "cumulative frequency")
+title("Word frequency distribution")
+```
+
+We can see from the plot above that the 90% of unique words come from aproximately 3% of the entire corpus data. We can use this information to optimise our dictionary.
+
+
+### Analyzing Bigrams
+
+Bigrams consist of a combination of two words.
+Now we will look at the distribution and frequency of the bigrams across various sources.
+
+```{r, include=TRUE}
+### Calculate bigram ###
+bigram_count <- readRDS("bigram_count.rds")
+bigram_count_source <- readRDS("bigram_count_source.rds")
+
+# bigram_freq <- bigram_count %>%
+#     mutate(freq = n/sum(bigram_count$n)) %>%
+#         mutate(index = row.names(bigram_count), cumfreq = cumsum(freq))
+
+bigram_count_source %>% top_n(10) %>%
+        ungroup() %>%
+        mutate(source = factor(source, levels = titles),
+               text_order = nrow(.):1) %>%
+        ggplot(aes(reorder(word, text_order), n, fill = source)) +
+          geom_col(show.legend = FALSE) +
+          facet_wrap(~ source, scales = "free_y") +
+          labs(title="Bigram frequencies",x="Bigram", y = "Frequency") +
+          coord_flip() +
+          theme(legend.position="none")
+```
+
+We will also look at the bigram distributions in the entire corpus.
+
+```{r, include=TRUE}
+bigram_count %>%
+        top_n(10) %>%
+        mutate(word=reorder(word,n)) %>%
+        ggplot(aes(word,n)) +
+        geom_col() +
+        labs(title="Bigram frequencies",x="Bigram",y="frequency")+
+        coord_flip()
+
+```
+
+### Analyzing Trigrams
+
+We will perform similar analysis for trigrams. Trigrams are a combination of three words.
+
+```{r, include=TRUE}
+trigram <- readRDS("trigram_count.rds")
+
+trigram %>%
+        top_n(10) %>%
+        mutate(word=reorder(word,n)) %>%
+        ggplot(aes(word,n),color="red") +
+        geom_col() +
+        labs(title="Trigrams frequencies",x="Trigram",y="frequency")+
+        coord_flip()
+```
+
+
+## Summary and plan for Shiny app
+
+1. More than 90% of the corpus is built using less than 10% of all the unique words/N-grams. So we can optimise our dictionary by removing low frequency word. For bigram and trigram we will be considering words with frequency more than 5 (n > 5).
+2. For prediction we will consider the word with the highest frequency that matches with the given user input. Higher order N-grams will be given priority and if no match is found then subsequent lower order N-grams will be considered.
+3. Next step is to tune the prediction algorithm and deploy the same on Shiny server.
